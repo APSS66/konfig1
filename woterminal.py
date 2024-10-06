@@ -1,10 +1,10 @@
+import csv
 import math
 import tkinter as tk
 import subprocess
 import zipfile
 import os
 from datetime import time, datetime
-import xml.etree.ElementTree as ET
 from os import listdir
 
 from main import load_config
@@ -30,7 +30,6 @@ class SimpleTerminalApp:
         self.input_text.pack()
         self.execute_button = tk.Button(root, text="Execute", command=self.execute_command)
         self.execute_button.pack()
-        self.output_text.insert(tk.END, "S66>")
 
         self.user = config['user']
         self.vfs_path = config['vfs_path']
@@ -39,6 +38,11 @@ class SimpleTerminalApp:
         if not self.validate_xml(config):
             print("Incorrect xml-file")
             exit(1)
+
+        f = open('log.csv', 'w+')
+        f.close()
+
+        self.output_text.insert(tk.END, self.user + ">")
 
     def validate_xml(self, config:dict) -> bool:
         correct_values = {'vfs_path':False, 'log_path': False, 'startup_script': False}
@@ -51,7 +55,10 @@ class SimpleTerminalApp:
                 correct_values['startup_script'] = True
         return True if all(correct_values.values()) else False
 
-
+    def log_action(self, action):
+        with open(self.log_path, mode='a', newline='') as log_file:
+            log_writer = csv.writer(log_file, delimiter=',')
+            log_writer.writerow([self.user, action, datetime.now()])
 
     def execute_command(self):
         command = self.input_text.get()
@@ -149,112 +156,115 @@ class SimpleTerminalApp:
         parsed_command = unparsed_command.split(" ")
         if not self.check_correct_arguments(parsed_command):
             self.output_text.insert(tk.END, "Incorrect command\n")
+            self.log_action("Incorrect command")
             return
         command = parsed_command[0]
-        try:
-            if command == 'clear':
-                self.output_text.delete('1.0', tk.END)
-            elif command == 'exit':
-                root.quit()
-            elif command == 'ls':
-                self.check_correct_arguments(parsed_command)
-                if len(parsed_command) == 1:
-                    path = self.current_dir
-                else:
-                    if self.get_absolute_path(parsed_command[1])[-1] == '/':
-                        path = self.get_absolute_path(parsed_command[1])
-                    else:
-                        path = self.get_absolute_path(parsed_command[1]) + '/'
-                with zipfile.ZipFile(self.vfs_path) as zip_file:
-                    files = set()
-                    dirs = set()
-                    for x in zip_file.infolist():
-                        if ('/' + x.filename).startswith(path):
-                            name = ('/' + x.filename).replace(path, '', 1)
-                            if x.is_dir():
-                                dirs.add(name.split("/", 1)[0])
-                            else:
-                                files.add(name.split("/", 1)[0])
-                    for x in dirs:
-                        if x != '' and x != '/':
-                            self.output_text.insert(tk.END, f"{x}/\n")
-                    for x in files:
-                        if x != '' and x != '/':
-                            self.output_text.insert(tk.END, f"{x}\n")
-            elif command == 'oldls':
-                with zipfile.ZipFile(self.vfs_path) as zip_file:
-                    for x in zip_file.infolist():
-                        self.output_text.insert(tk.END, f"{x.filename}\n")
-            elif command == 'mkdir':
-                with zipfile.ZipFile(self.vfs_path, 'a') as zip_file:
-                    zip_file.mkdir(parsed_command[1])
-            elif command == 'touch':
-                with zipfile.ZipFile(self.vfs_path, 'a') as zip_file:
-                    if parsed_command[1] not in zip_file.namelist():
-                        zip_file.writestr(parsed_command[1], '')
-                    else:
-                        self.output_text.insert(tk.END, "Error: file already exists\n")
-            elif command == 'rmdir':
-                temp_zip_path = self.vfs_path + '.tmp'
-                with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
-                    with zipfile.ZipFile(temp_zip_path, 'w') as zip_to_write:
-                        for item in zip_to_read.infolist():
-                            if not self.get_absolute_path(item.filename).startswith(
-                                    self.get_absolute_path(parsed_command[1])):
-                                zip_to_write.writestr(item, zip_to_read.read(item.filename))
-                os.replace(temp_zip_path, self.vfs_path)
-            elif command == 'rm':
-                temp_zip_path = self.vfs_path + '.tmp'
-                with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
-                    with zipfile.ZipFile(temp_zip_path, 'w') as zip_to_write:
-                        for item in zip_to_read.infolist():
-                            if item.filename != parsed_command[1]:
-                                zip_to_write.writestr(item, zip_to_read.read(item.filename))
-                os.replace(temp_zip_path, self.vfs_path)
-            elif command == 'uptime':
-                command_time = datetime.now()
-                time_duration = command_time - self.start_time
-                self.output_text.insert(tk.END,
-                                        f"{command_time.strftime('%H:%M:%S')} uptime {math.floor(time_duration.total_seconds())} sec\n")
-            elif command == 'find':
-                abs_path = self.get_absolute_path(parsed_command[1])
-                with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
-                    for item in zip_to_read.namelist():
-                        if ('/' + item).startswith(abs_path):
-                            self.output_text.insert(tk.END, f"{item}\n")
-            elif command == 'cp':
-                # пофиксить issue с лишним фантомным файлом при копировании в директорию
-                zip_temp_path = self.vfs_path + '.tmp'
-                target_dir = self.get_absolute_path(parsed_command[2]).split('/', 1)[1]
-                with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
-                    with zipfile.ZipFile(zip_temp_path, 'w') as zip_to_write:
-                        for item in zip_to_read.infolist():
-                            if item.filename == parsed_command[1]:
-                                zip_to_write.writestr(target_dir + item.filename, zip_to_read.read(item.filename))
-                            zip_to_write.writestr(item, zip_to_read.read(item.filename))
-                os.replace(zip_temp_path, self.vfs_path)
-            elif command == "cd":
-                # не работает ../
-                abs_path = self.get_absolute_path(parsed_command[1])
-                self.current_dir = abs_path
-            elif command == 'pwd':
-                self.output_text.insert(tk.END, f"{self.current_dir}\n")
-            elif command in self.pool_of_commands:
-                output = subprocess.check_output(unparsed_command, cwd=self.vfs_path, stderr=subprocess.STDOUT,
-                                                 shell=True, text=True)
-                self.output_text.insert(tk.END, output)
+        if command == 'clear':
+            self.output_text.delete('1.0', tk.END)
+            self.log_action("clear")
+        elif command == 'exit':
+            root.quit()
+            self.log_action("exit")
+        elif command == 'ls':
+            self.check_correct_arguments(parsed_command)
+            if len(parsed_command) == 1:
+                path = self.current_dir
             else:
-                self.output_text.insert(tk.END, f"Unknown command: {command}\n")
-        except subprocess.CalledProcessError as e:
-            self.output_text.insert(tk.END, f"Error: {e.output}\n")
-        except Exception as e:
-            self.output_text.insert(tk.END, f"Unexpected error: {str(e)}\n")
-        self.output_text.insert(tk.END, "S66>")
+                if self.get_absolute_path(parsed_command[1])[-1] == '/':
+                    path = self.get_absolute_path(parsed_command[1])
+                else:
+                    path = self.get_absolute_path(parsed_command[1]) + '/'
+            with zipfile.ZipFile(self.vfs_path) as zip_file:
+                files = set()
+                dirs = set()
+                for x in zip_file.infolist():
+                    if ('/' + x.filename).startswith(path):
+                        name = ('/' + x.filename).replace(path, '', 1)
+                        if x.is_dir():
+                            dirs.add(name.split("/", 1)[0])
+                        else:
+                            files.add(name.split("/", 1)[0])
+                for x in dirs:
+                    if x != '' and x != '/':
+                        self.output_text.insert(tk.END, f"{x}/\n")
+                for x in files:
+                    if x != '' and x != '/':
+                        self.output_text.insert(tk.END, f"{x}\n")
+            self.log_action("ls")
+        elif command == 'oldls':
+            with zipfile.ZipFile(self.vfs_path) as zip_file:
+                for x in zip_file.infolist():
+                    self.output_text.insert(tk.END, f"{x.filename}\n")
+        elif command == 'mkdir':
+            with zipfile.ZipFile(self.vfs_path, 'a') as zip_file:
+                zip_file.mkdir(parsed_command[1])
+            self.log_action("mkdir " + parsed_command[1])
+        elif command == 'touch':
+            # Не работает
+            with zipfile.ZipFile(self.vfs_path, 'a') as zip_file:
+                if parsed_command[1] not in zip_file.namelist():
+                    zip_file.writestr(parsed_command[1], '')
+                else:
+                    self.output_text.insert(tk.END, "Error: file already exists\n")
+            self.log_action("touch " + parsed_command[1])
+        elif command == 'rmdir':
+            temp_zip_path = self.vfs_path + '.tmp'
+            with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
+                with zipfile.ZipFile(temp_zip_path, 'w') as zip_to_write:
+                    for item in zip_to_read.infolist():
+                        if not self.get_absolute_path(item.filename).startswith(
+                                self.get_absolute_path(parsed_command[1])):
+                            zip_to_write.writestr(item, zip_to_read.read(item.filename))
+            os.replace(temp_zip_path, self.vfs_path)
+            self.log_action("rmdir" + parsed_command[1])
+        elif command == 'rm':
+            temp_zip_path = self.vfs_path + '.tmp'
+            with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
+                with zipfile.ZipFile(temp_zip_path, 'w') as zip_to_write:
+                    for item in zip_to_read.infolist():
+                        if item.filename != parsed_command[1]:
+                            zip_to_write.writestr(item, zip_to_read.read(item.filename))
+            os.replace(temp_zip_path, self.vfs_path)
+            self.log_action("rm " + parsed_command[1])
+        elif command == 'uptime':
+            command_time = datetime.now()
+            time_duration = command_time - self.start_time
+            self.output_text.insert(tk.END,
+                                    f"{command_time.strftime('%H:%M:%S')} uptime {math.floor(time_duration.total_seconds())} sec\n")
+            self.log_action("uptime")
+        elif command == 'find':
+            abs_path = self.get_absolute_path(parsed_command[1])
+            with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
+                for item in zip_to_read.namelist():
+                    if ('/' + item).startswith(abs_path):
+                        self.output_text.insert(tk.END, f"{item}\n")
+            self.log_action("find " + parsed_command[1])
+        elif command == 'cp':
+            # пофиксить issue с лишним фантомным файлом при копировании в директорию
+            zip_temp_path = self.vfs_path + '.tmp'
+            target_dir = self.get_absolute_path(parsed_command[2]).split('/', 1)[1]
+            with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
+                with zipfile.ZipFile(zip_temp_path, 'w') as zip_to_write:
+                    for item in zip_to_read.infolist():
+                        if item.filename == parsed_command[1]:
+                            zip_to_write.writestr(target_dir + item.filename, zip_to_read.read(item.filename))
+                        zip_to_write.writestr(item, zip_to_read.read(item.filename))
+            os.replace(zip_temp_path, self.vfs_path)
+            self.log_action("cp " + parsed_command[1] + " to " + parsed_command[2])
+        elif command == "cd":
+            # не работает ../
+            abs_path = self.get_absolute_path(parsed_command[1])
+            self.current_dir = abs_path
+            self.log_action("cd to " + parsed_command[1])
+        elif command == 'pwd':
+            self.output_text.insert(tk.END, f"{self.current_dir}\n")
+            self.log_action("pwd")
+        self.output_text.insert(tk.END, self.user + ">")
 
 
 
 if __name__ == "__main__":
-    config = load_config('config.xml');
+    config = load_config('config.xml')
     root = tk.Tk()
     terminal_app = SimpleTerminalApp(root, config)
     root.mainloop()

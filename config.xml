@@ -1,6 +1,6 @@
 <config>
-    <user>user</user>
-    <vfs_path>virtual_filesystem.zip</vfs_path>
+    <user>S66</user>
+    <vfs_path>filesys.zip</vfs_path>
     <log_path>log.csv</log_path>
     <startup_script>startup_script.txt</startup_script>
 </config>
