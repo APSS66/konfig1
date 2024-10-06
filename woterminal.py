@@ -1,10 +1,9 @@
 import csv
 import math
 import tkinter as tk
-import subprocess
 import zipfile
 import os
-from datetime import time, datetime
+from datetime import datetime
 from os import listdir
 
 from main import load_config
@@ -92,9 +91,8 @@ class SimpleTerminalApp:
             for file in zip_ref.infolist():
                 p1 = self.get_absolute_path('/' + file.filename)
                 p2 = self.get_absolute_path(path)
-                if p1 == p2:
-                    if file.is_dir():
-                        return True
+                if p1 == p2 and file.is_dir():
+                    return True
         return False
 
     def check_correct_file_path(self, path: str) -> bool:
@@ -120,7 +118,8 @@ class SimpleTerminalApp:
         elif parsed_command[0] == 'mkdir' or parsed_command[0] == 'touch':
             if len(parsed_command) != 2:
                 return False
-            path_to_check = self.get_absolute_path(parsed_command[1]).rsplit('/', 2)[0]
+            path_to_check = self.get_absolute_path(parsed_command[1]).rsplit('/', 2)[0] + '/'
+            print(path_to_check)
             if path_to_check == '' or path_to_check == '/':
                 return True
             return self.check_correct_folder_path(path_to_check)
@@ -152,6 +151,116 @@ class SimpleTerminalApp:
         else:
             return False
 
+    def clear(self):
+        self.output_text.delete('1.0', tk.END)
+        self.log_action("clear")
+
+    def exit(self):
+        root.quit()
+        self.log_action("exit")
+
+    def ls(self, parsed_command):
+        self.check_correct_arguments(parsed_command)
+        if len(parsed_command) == 1:
+            path = self.current_dir
+        else:
+            if self.get_absolute_path(parsed_command[1])[-1] == '/':
+                path = self.get_absolute_path(parsed_command[1])
+            else:
+                path = self.get_absolute_path(parsed_command[1]) + '/'
+        with zipfile.ZipFile(self.vfs_path) as zip_file:
+            files = set()
+            dirs = set()
+            for x in zip_file.infolist():
+                if ('/' + x.filename).startswith(path):
+                    name = ('/' + x.filename).replace(path, '', 1)
+                    if x.is_dir():
+                        dirs.add(name.split("/", 1)[0])
+                    else:
+                        files.add(name.split("/", 1)[0])
+            for x in dirs:
+                if x != '' and x != '/':
+                    self.output_text.insert(tk.END, f"{x}/\n")
+            for x in files:
+                if x != '' and x != '/':
+                    self.output_text.insert(tk.END, f"{x}\n")
+        self.log_action("ls")
+
+    def oldls(self):
+        with zipfile.ZipFile(self.vfs_path) as zip_file:
+            for x in zip_file.infolist():
+                self.output_text.insert(tk.END, f"{x.filename}\n")
+
+    def mkdir(self, parsed_command):
+        with zipfile.ZipFile(self.vfs_path, 'a') as zip_file:
+            zip_file.mkdir(parsed_command[1])
+        self.log_action("mkdir " + parsed_command[1])
+
+    def touch(self, parsed_command):
+        with zipfile.ZipFile(self.vfs_path, 'a') as zip_file:
+            if parsed_command[1] not in zip_file.namelist():
+                zip_file.writestr(parsed_command[1], '')
+            else:
+                self.output_text.insert(tk.END, "Error: file already exists\n")
+        self.log_action("touch " + parsed_command[1])
+
+    def rmdir(self, parsed_command):
+        temp_zip_path = self.vfs_path + '.tmp'
+        with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
+            with zipfile.ZipFile(temp_zip_path, 'w') as zip_to_write:
+                for item in zip_to_read.infolist():
+                    if not self.get_absolute_path(item.filename).startswith(
+                            self.get_absolute_path(parsed_command[1])):
+                        zip_to_write.writestr(item, zip_to_read.read(item.filename))
+        os.replace(temp_zip_path, self.vfs_path)
+        self.log_action("rmdir" + parsed_command[1])
+
+    def rm(self, parsed_command):
+        temp_zip_path = self.vfs_path + '.tmp'
+        with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
+            with zipfile.ZipFile(temp_zip_path, 'w') as zip_to_write:
+                for item in zip_to_read.infolist():
+                    if item.filename != parsed_command[1]:
+                        zip_to_write.writestr(item, zip_to_read.read(item.filename))
+        os.replace(temp_zip_path, self.vfs_path)
+        self.log_action("rm " + parsed_command[1])
+
+    def uptime(self):
+        command_time = datetime.now()
+        time_duration = command_time - self.start_time
+        self.output_text.insert(tk.END,
+                                f"{command_time.strftime('%H:%M:%S')} uptime {math.floor(time_duration.total_seconds())} sec\n")
+        self.log_action("uptime")
+
+    def find(self, parsed_command):
+        abs_path = self.get_absolute_path(parsed_command[1])
+        with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
+            for item in zip_to_read.namelist():
+                if ('/' + item).startswith(abs_path):
+                    self.output_text.insert(tk.END, f"{item}\n")
+        self.log_action("find " + parsed_command[1])
+
+    def cp(self, parsed_command):
+        zip_temp_path = self.vfs_path + '.tmp'
+        target_dir = self.get_absolute_path(parsed_command[2]).split('/', 1)[1]
+        with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
+            with zipfile.ZipFile(zip_temp_path, 'w') as zip_to_write:
+                for item in zip_to_read.infolist():
+                    if item.filename == parsed_command[1]:
+                        zip_to_write.writestr(target_dir + item.filename, zip_to_read.read(item.filename))
+                    zip_to_write.writestr(item, zip_to_read.read(item.filename))
+        os.replace(zip_temp_path, self.vfs_path)
+        self.log_action("cp " + parsed_command[1] + " to " + parsed_command[2])
+
+    def cd(self, parsed_command):
+        abs_path = self.get_absolute_path(parsed_command[1])
+        self.current_dir = abs_path
+        self.log_action("cd to " + parsed_command[1])
+
+    def pwd(self):
+        self.output_text.insert(tk.END, f"{self.current_dir}\n")
+        self.log_action("pwd")
+
     def run_command(self, unparsed_command: str):
         parsed_command = unparsed_command.split(" ")
         if not self.check_correct_arguments(parsed_command):
@@ -160,105 +269,34 @@ class SimpleTerminalApp:
             return
         command = parsed_command[0]
         if command == 'clear':
-            self.output_text.delete('1.0', tk.END)
-            self.log_action("clear")
+           self.clear()
         elif command == 'exit':
-            root.quit()
-            self.log_action("exit")
+            self.exit()
         elif command == 'ls':
-            self.check_correct_arguments(parsed_command)
-            if len(parsed_command) == 1:
-                path = self.current_dir
-            else:
-                if self.get_absolute_path(parsed_command[1])[-1] == '/':
-                    path = self.get_absolute_path(parsed_command[1])
-                else:
-                    path = self.get_absolute_path(parsed_command[1]) + '/'
-            with zipfile.ZipFile(self.vfs_path) as zip_file:
-                files = set()
-                dirs = set()
-                for x in zip_file.infolist():
-                    if ('/' + x.filename).startswith(path):
-                        name = ('/' + x.filename).replace(path, '', 1)
-                        if x.is_dir():
-                            dirs.add(name.split("/", 1)[0])
-                        else:
-                            files.add(name.split("/", 1)[0])
-                for x in dirs:
-                    if x != '' and x != '/':
-                        self.output_text.insert(tk.END, f"{x}/\n")
-                for x in files:
-                    if x != '' and x != '/':
-                        self.output_text.insert(tk.END, f"{x}\n")
-            self.log_action("ls")
+           self.ls(parsed_command)
         elif command == 'oldls':
-            with zipfile.ZipFile(self.vfs_path) as zip_file:
-                for x in zip_file.infolist():
-                    self.output_text.insert(tk.END, f"{x.filename}\n")
+            self.oldls()
         elif command == 'mkdir':
-            with zipfile.ZipFile(self.vfs_path, 'a') as zip_file:
-                zip_file.mkdir(parsed_command[1])
-            self.log_action("mkdir " + parsed_command[1])
+            self.mkdir(parsed_command)
         elif command == 'touch':
             # Не работает
-            with zipfile.ZipFile(self.vfs_path, 'a') as zip_file:
-                if parsed_command[1] not in zip_file.namelist():
-                    zip_file.writestr(parsed_command[1], '')
-                else:
-                    self.output_text.insert(tk.END, "Error: file already exists\n")
-            self.log_action("touch " + parsed_command[1])
+            self.touch(parsed_command)
         elif command == 'rmdir':
-            temp_zip_path = self.vfs_path + '.tmp'
-            with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
-                with zipfile.ZipFile(temp_zip_path, 'w') as zip_to_write:
-                    for item in zip_to_read.infolist():
-                        if not self.get_absolute_path(item.filename).startswith(
-                                self.get_absolute_path(parsed_command[1])):
-                            zip_to_write.writestr(item, zip_to_read.read(item.filename))
-            os.replace(temp_zip_path, self.vfs_path)
-            self.log_action("rmdir" + parsed_command[1])
+            self.rmdir(parsed_command)
         elif command == 'rm':
-            temp_zip_path = self.vfs_path + '.tmp'
-            with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
-                with zipfile.ZipFile(temp_zip_path, 'w') as zip_to_write:
-                    for item in zip_to_read.infolist():
-                        if item.filename != parsed_command[1]:
-                            zip_to_write.writestr(item, zip_to_read.read(item.filename))
-            os.replace(temp_zip_path, self.vfs_path)
-            self.log_action("rm " + parsed_command[1])
+           self.rm(parsed_command)
         elif command == 'uptime':
-            command_time = datetime.now()
-            time_duration = command_time - self.start_time
-            self.output_text.insert(tk.END,
-                                    f"{command_time.strftime('%H:%M:%S')} uptime {math.floor(time_duration.total_seconds())} sec\n")
-            self.log_action("uptime")
+            self.uptime()
         elif command == 'find':
-            abs_path = self.get_absolute_path(parsed_command[1])
-            with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
-                for item in zip_to_read.namelist():
-                    if ('/' + item).startswith(abs_path):
-                        self.output_text.insert(tk.END, f"{item}\n")
-            self.log_action("find " + parsed_command[1])
+           self.find(parsed_command)
         elif command == 'cp':
             # пофиксить issue с лишним фантомным файлом при копировании в директорию
-            zip_temp_path = self.vfs_path + '.tmp'
-            target_dir = self.get_absolute_path(parsed_command[2]).split('/', 1)[1]
-            with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
-                with zipfile.ZipFile(zip_temp_path, 'w') as zip_to_write:
-                    for item in zip_to_read.infolist():
-                        if item.filename == parsed_command[1]:
-                            zip_to_write.writestr(target_dir + item.filename, zip_to_read.read(item.filename))
-                        zip_to_write.writestr(item, zip_to_read.read(item.filename))
-            os.replace(zip_temp_path, self.vfs_path)
-            self.log_action("cp " + parsed_command[1] + " to " + parsed_command[2])
+            self.cp(parsed_command)
         elif command == "cd":
             # не работает ../
-            abs_path = self.get_absolute_path(parsed_command[1])
-            self.current_dir = abs_path
-            self.log_action("cd to " + parsed_command[1])
+            self.cd(parsed_command)
         elif command == 'pwd':
-            self.output_text.insert(tk.END, f"{self.current_dir}\n")
-            self.log_action("pwd")
+            self.pwd()
         self.output_text.insert(tk.END, self.user + ">")
 
 
