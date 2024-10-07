@@ -18,8 +18,6 @@ class SimpleTerminalApp:
     def __init__(self, root, config:dict):
         self.start_time = datetime.now()
         self.current_dir = '/'
-        self.pool_of_commands = ['ls', 'clear', 'exit', 'cd', 'mkdir', 'rmdir',
-                                 'rm', 'cp', 'uptime', 'find', 'touch', 'pwd']
 
         self.root = root
         self.root.title("Simple Terminal with Zip Env")
@@ -66,10 +64,6 @@ class SimpleTerminalApp:
             self.input_text.delete(0, tk.END)
             self.run_command(command)
 
-    # Абсолютный или относительный
-    # Если абсолютный: поставить res как /
-    # Если относительный : поставить res как current_dir
-    # Парсить состоявляющие пути, проверяя их коррекнтость
     def get_absolute_path(self, path: str, IS_FILE: bool) -> str:
         if path.startswith("/"):
             return path
@@ -108,8 +102,6 @@ class SimpleTerminalApp:
                     return True
         return False
 
-    # /asd/zxc/ -> /asd/
-    # /qwe/asd/zxc/ -> /qwe/asd/
     def check_correct_arguments(self, parsed_command: list) -> bool:
         if parsed_command[0] == 'ls':
             if len(parsed_command) > 2:
@@ -143,10 +135,6 @@ class SimpleTerminalApp:
                 return False
             return (self.check_correct_folder_path(self.get_absolute_path(parsed_command[1], IS_DIR))
                     or self.check_correct_file_path(self.get_absolute_path(parsed_command[1], IS_FILE)))
-        # elif parsed_command[0] == 'cd':
-        #     if len(parsed_command) != 2:
-        #         return False
-        #     return self.check_correct_folder_path(self.get_absolute_path(parsed_command[1]))
         elif parsed_command[0] == 'cp':
             if len(parsed_command) != 3:
                 return False
@@ -178,7 +166,7 @@ class SimpleTerminalApp:
             for x in zip_file.infolist():
                 if ('/' + x.filename).startswith(path):
                     name = ('/' + x.filename).replace(path, '', 1)
-                    if x.is_dir():
+                    if name.count('/') > 0:
                         dirs.add(name.split("/", 1)[0])
                     else:
                         files.add(name.split("/", 1)[0])
@@ -248,13 +236,14 @@ class SimpleTerminalApp:
         self.log_action("find " + parsed_command[1])
 
     def cp(self, parsed_command):
-        # заменить относительный на абсолютный
         zip_temp_path = self.vfs_path + '.tmp'
-        target_dir = self.get_absolute_path(parsed_command[2], IS_DIR).split('/', 1)[1]
+        file_path = self.get_absolute_path(parsed_command[1], IS_FILE)[1:]
+        target_dir = self.get_absolute_path(parsed_command[2], IS_DIR)[1:]
         with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
             with zipfile.ZipFile(zip_temp_path, 'w') as zip_to_write:
                 for item in zip_to_read.infolist():
-                    if item.filename == parsed_command[1]:
+                    tfn = item.filename
+                    if file_path == tfn:
                         zip_to_write.writestr(target_dir + item.filename, zip_to_read.read(item.filename))
                     zip_to_write.writestr(item, zip_to_read.read(item.filename))
         os.replace(zip_temp_path, self.vfs_path)
@@ -298,7 +287,6 @@ class SimpleTerminalApp:
         elif command == 'find':
            self.find(parsed_command)
         elif command == 'cp':
-            # пофиксить issue с лишним фантомным файлом при копировании в директорию
             self.cp(parsed_command)
         elif command == "cd":
             self.cd(parsed_command)
@@ -313,18 +301,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     terminal_app = SimpleTerminalApp(root, config)
     root.mainloop()
-
-#     def create_zip_archive(self):
-#         # Create a zip archive and add a sample script
-#         with zipfile.ZipFile(self.zip_file_path, 'w') as zipf:
-#             # Create a simple Python script and add it to the ZIP file
-#             sample_script_content = """\
-# print("Hello from the sample script!")
-# """
-#             script_filename = os.path.join(self.temp_dir, 'sample_script.py')
-#             with open(script_filename, 'w') as script_file:
-#                 script_file.write(sample_script_content)
-#
-#             zipf.write(script_filename, os.path.basename(script_filename))
-#
-#             self.output_text.insert(tk.END, f"Created ZIP archive at {self.zip_file_path}\n")
