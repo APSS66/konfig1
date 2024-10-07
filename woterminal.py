@@ -70,7 +70,7 @@ class SimpleTerminalApp:
     # Если абсолютный: поставить res как /
     # Если относительный : поставить res как current_dir
     # Парсить состоявляющие пути, проверяя их коррекнтость
-    def get_absolute_path(self, path: str) -> str:
+    def get_absolute_path(self, path: str, IS_FILE: bool) -> str:
         if path.startswith("/"):
             return path
         res = self.current_dir
@@ -79,18 +79,22 @@ class SimpleTerminalApp:
             if part == ".":
                 pass
             elif part == "..":
-                res = res.rsplit('/', 1)[0]
+                res = res.rsplit('/', 2)[0]
             else:
                 if part != '':
                     res += part + '/'
+        res = res[:-1] if IS_FILE else res
         res = '/' if len(res) == 0 else res
+
         return res
 
     def check_correct_folder_path(self, path: str) -> bool:
+        if path == '/':
+            return True
         with zipfile.ZipFile(self.vfs_path, 'r') as zip_ref:
             for file in zip_ref.infolist():
-                p1 = self.get_absolute_path('/' + file.filename)
-                p2 = self.get_absolute_path(path)
+                p1 = self.get_absolute_path('/' + file.filename, not file.is_dir())
+                p2 = self.get_absolute_path(path, IS_DIR)
                 if p1 == p2 and file.is_dir():
                     return True
         return False
@@ -99,8 +103,8 @@ class SimpleTerminalApp:
         with zipfile.ZipFile(self.vfs_path, 'r') as zip_ref:
             for file in zip_ref.infolist():
                 # может неработать
-                p1 = self.get_absolute_path(file.filename)
-                p2 = self.get_absolute_path(path)
+                p1 = self.get_absolute_path(file.filename, not file.is_dir())
+                p2 = self.get_absolute_path(path, IS_FILE)
                 if p1 == p2 and not file.is_dir():
                     return True
         return False
@@ -114,11 +118,12 @@ class SimpleTerminalApp:
             elif len(parsed_command) == 1:
                 return True
             else:
-                return self.check_correct_folder_path(self.get_absolute_path(parsed_command[1]))
+                return self.check_correct_folder_path(self.get_absolute_path(parsed_command[1], IS_DIR))
         elif parsed_command[0] == 'mkdir' or parsed_command[0] == 'touch':
             if len(parsed_command) != 2:
                 return False
-            path_to_check = self.get_absolute_path(parsed_command[1]).rsplit('/', 2)[0] + '/'
+            file_type = IS_FILE if parsed_command[1] == 'touch' else IS_DIR
+            path_to_check = self.get_absolute_path(parsed_command[1], file_type).rsplit('/', 2)[0] + '/'
             print(path_to_check)
             if path_to_check == '' or path_to_check == '/':
                 return True
@@ -126,19 +131,19 @@ class SimpleTerminalApp:
         elif parsed_command[0] == 'rmdir' or parsed_command[0] == 'cd':
             if len(parsed_command) != 2:
                 return False
-            return self.check_correct_folder_path(self.get_absolute_path(parsed_command[1]))
+            return self.check_correct_folder_path(self.get_absolute_path(parsed_command[1], IS_DIR))
         elif parsed_command[0] == 'rm':
             if len(parsed_command) != 2:
                 return False
-            return self.check_correct_file_path(self.get_absolute_path(parsed_command[1]))
+            return self.check_correct_file_path(self.get_absolute_path(parsed_command[1], IS_FILE))
         elif (parsed_command[0] == 'exit' or parsed_command[0] == 'clear' or parsed_command[0] == 'uptime'
               or parsed_command[0] == 'pwd' or parsed_command[0] == 'oldls'):
             return len(parsed_command) == 1
         elif parsed_command[0] == 'find':
             if len(parsed_command) != 2:
                 return False
-            return (self.check_correct_folder_path(self.get_absolute_path(parsed_command[1]))
-                    or self.check_correct_file_path(self.get_absolute_path(parsed_command[1])))
+            return (self.check_correct_folder_path(self.get_absolute_path(parsed_command[1], IS_DIR))
+                    or self.check_correct_file_path(self.get_absolute_path(parsed_command[1], IS_FILE)))
         # elif parsed_command[0] == 'cd':
         #     if len(parsed_command) != 2:
         #         return False
@@ -164,10 +169,10 @@ class SimpleTerminalApp:
         if len(parsed_command) == 1:
             path = self.current_dir
         else:
-            if self.get_absolute_path(parsed_command[1])[-1] == '/':
-                path = self.get_absolute_path(parsed_command[1])
+            if self.get_absolute_path(parsed_command[1], IS_DIR)[-1] == '/':
+                path = self.get_absolute_path(parsed_command[1], IS_DIR)
             else:
-                path = self.get_absolute_path(parsed_command[1]) + '/'
+                path = self.get_absolute_path(parsed_command[1], IS_DIR) + '/'
         with zipfile.ZipFile(self.vfs_path) as zip_file:
             files = set()
             dirs = set()
@@ -197,20 +202,21 @@ class SimpleTerminalApp:
         self.log_action("mkdir " + parsed_command[1])
 
     def touch(self, parsed_command):
+        file_path = self.get_absolute_path(parsed_command[1], IS_FILE)[1:]
         with zipfile.ZipFile(self.vfs_path, 'a') as zip_file:
-            if parsed_command[1] not in zip_file.namelist():
-                zip_file.writestr(parsed_command[1], '')
+            if file_path not in zip_file.namelist():
+                zip_file.writestr(file_path, '')
             else:
                 self.output_text.insert(tk.END, "Error: file already exists\n")
-        self.log_action("touch " + parsed_command[1])
+        self.log_action("touch " + file_path)
 
     def rmdir(self, parsed_command):
         temp_zip_path = self.vfs_path + '.tmp'
         with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
             with zipfile.ZipFile(temp_zip_path, 'w') as zip_to_write:
                 for item in zip_to_read.infolist():
-                    if not self.get_absolute_path(item.filename).startswith(
-                            self.get_absolute_path(parsed_command[1])):
+                    if not self.get_absolute_path(item.filename, IS_DIR).startswith(
+                            self.get_absolute_path(parsed_command[1], IS_DIR)):
                         zip_to_write.writestr(item, zip_to_read.read(item.filename))
         os.replace(temp_zip_path, self.vfs_path)
         self.log_action("rmdir" + parsed_command[1])
@@ -220,7 +226,9 @@ class SimpleTerminalApp:
         with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
             with zipfile.ZipFile(temp_zip_path, 'w') as zip_to_write:
                 for item in zip_to_read.infolist():
-                    if item.filename != parsed_command[1]:
+                    p1 = item.filename
+                    p2 = self.get_absolute_path(parsed_command[1], IS_FILE)
+                    if p1 != p2:
                         zip_to_write.writestr(item, zip_to_read.read(item.filename))
         os.replace(temp_zip_path, self.vfs_path)
         self.log_action("rm " + parsed_command[1])
@@ -233,7 +241,7 @@ class SimpleTerminalApp:
         self.log_action("uptime")
 
     def find(self, parsed_command):
-        abs_path = self.get_absolute_path(parsed_command[1])
+        abs_path = self.get_absolute_path(parsed_command[1], IS_FILE)
         with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
             for item in zip_to_read.namelist():
                 if ('/' + item).startswith(abs_path):
@@ -241,8 +249,9 @@ class SimpleTerminalApp:
         self.log_action("find " + parsed_command[1])
 
     def cp(self, parsed_command):
+        # заменить относительный на абсолютный
         zip_temp_path = self.vfs_path + '.tmp'
-        target_dir = self.get_absolute_path(parsed_command[2]).split('/', 1)[1]
+        target_dir = self.get_absolute_path(parsed_command[2], IS_DIR).split('/', 1)[1]
         with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
             with zipfile.ZipFile(zip_temp_path, 'w') as zip_to_write:
                 for item in zip_to_read.infolist():
@@ -253,7 +262,7 @@ class SimpleTerminalApp:
         self.log_action("cp " + parsed_command[1] + " to " + parsed_command[2])
 
     def cd(self, parsed_command):
-        abs_path = self.get_absolute_path(parsed_command[1])
+        abs_path = self.get_absolute_path(parsed_command[1], IS_DIR)
         self.current_dir = abs_path
         self.log_action("cd to " + parsed_command[1])
 
@@ -293,7 +302,6 @@ class SimpleTerminalApp:
             # пофиксить issue с лишним фантомным файлом при копировании в директорию
             self.cp(parsed_command)
         elif command == "cd":
-            # не работает ../
             self.cd(parsed_command)
         elif command == 'pwd':
             self.pwd()
