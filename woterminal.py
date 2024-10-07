@@ -93,7 +93,7 @@ class SimpleTerminalApp:
             return True
         with zipfile.ZipFile(self.vfs_path, 'r') as zip_ref:
             for file in zip_ref.infolist():
-                p1 = self.get_absolute_path('/' + file.filename, not file.is_dir())
+                p1 = '/' + file.filename
                 p2 = self.get_absolute_path(path, IS_DIR)
                 if p1 == p2 and file.is_dir():
                     return True
@@ -102,8 +102,7 @@ class SimpleTerminalApp:
     def check_correct_file_path(self, path: str) -> bool:
         with zipfile.ZipFile(self.vfs_path, 'r') as zip_ref:
             for file in zip_ref.infolist():
-                # может неработать
-                p1 = self.get_absolute_path(file.filename, not file.is_dir())
+                p1 = '/' + file.filename
                 p2 = self.get_absolute_path(path, IS_FILE)
                 if p1 == p2 and not file.is_dir():
                     return True
@@ -226,7 +225,7 @@ class SimpleTerminalApp:
         with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
             with zipfile.ZipFile(temp_zip_path, 'w') as zip_to_write:
                 for item in zip_to_read.infolist():
-                    p1 = item.filename
+                    p1 = '/' + item.filename
                     p2 = self.get_absolute_path(parsed_command[1], IS_FILE)
                     if p1 != p2:
                         zip_to_write.writestr(item, zip_to_read.read(item.filename))
