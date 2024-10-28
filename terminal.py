@@ -4,9 +4,7 @@ import tkinter as tk
 import zipfile
 import os
 from datetime import datetime
-from os import listdir
-
-from main import load_config
+import xml.etree.ElementTree as ET
 
 IS_FILE = True
 IS_DIR = False
@@ -14,11 +12,10 @@ IS_DIR = False
 
 class SimpleTerminalApp:
 
-
-    def __init__(self, root, config:dict):
+    def __init__(self, root, config: dict):
         self.start_time = datetime.now()
         self.current_dir = '/'
-        
+
         self.root = root
         self.root.title("Simple Terminal with Zip Env")
         self.output_text = tk.Text(root, wrap='word', height=20, width=70)
@@ -32,7 +29,7 @@ class SimpleTerminalApp:
         self.vfs_path = config['vfs_path']
         self.log_path = config['log_path']
         self.startup_script = config['startup_script']
-        if not self.validate_xml(config):
+        if not self.validate_xml(config, os.listdir()):
             print("Incorrect xml-file")
             exit(1)
 
@@ -42,10 +39,9 @@ class SimpleTerminalApp:
         self.output_text.insert(tk.END, self.user + ">")
         self.execute_startup_script()
 
-
-    def validate_xml(self, config:dict) -> bool:
-        correct_values = {'vfs_path':False, 'log_path': False, 'startup_script': False}
-        for file in listdir(os.curdir):
+    def validate_xml(self, config: dict, dirs: list) -> bool:
+        correct_values = {'vfs_path': False, 'log_path': False, 'startup_script': False}
+        for file in dirs:
             if file == config['vfs_path']:
                 correct_values['vfs_path'] = True
             if file == config['log_path']:
@@ -58,7 +54,7 @@ class SimpleTerminalApp:
         with open(self.log_path, mode='a', newline='') as log_file:
             log_writer = csv.writer(log_file, delimiter=',')
             log_writer.writerow([self.user, action, datetime.now().strftime('%H:%M')])
-    
+
     def execute_startup_script(self):
         with open(self.startup_script, 'r') as script:
             for line in script:
@@ -67,7 +63,6 @@ class SimpleTerminalApp:
                 self.input_text.delete(0, tk.END)
                 self.run_command(command)
 
-
     def execute_command(self):
         command = self.input_text.get()
         if command:
@@ -75,7 +70,7 @@ class SimpleTerminalApp:
             self.input_text.delete(0, tk.END)
             self.run_command(command)
 
-    def get_absolute_path(self, path: str, IS_FILE: bool) -> str:
+    def get_absolute_path(self, path: str, is_file: bool) -> str:
         if path.startswith("/"):
             return path
         res = self.current_dir
@@ -88,7 +83,7 @@ class SimpleTerminalApp:
             else:
                 if part != '':
                     res += part + '/'
-        res = res[:-1] if IS_FILE else res
+        res = res[:-1] if is_file else res
         res = '/' if len(res) == 0 else res
 
         return res
@@ -158,7 +153,7 @@ class SimpleTerminalApp:
         self.log_action("clear")
 
     def exit(self):
-        root.quit()
+        self.root.quit()
         self.log_action("exit")
 
     def ls(self, parsed_command):
@@ -198,7 +193,6 @@ class SimpleTerminalApp:
             zip_file.mkdir(parsed_command[1])
         self.log_action("mkdir " + parsed_command[1])
 
-
     def touch(self, parsed_command):
         file_path = self.get_absolute_path(parsed_command[1], IS_FILE)[1:]
         with zipfile.ZipFile(self.vfs_path, 'a') as zip_file:
@@ -207,7 +201,6 @@ class SimpleTerminalApp:
             else:
                 self.output_text.insert(tk.END, "Error: file already exists\n")
         self.log_action("touch " + file_path)
-
 
     def rmdir(self, parsed_command):
         temp_zip_path = self.vfs_path + '.tmp'
@@ -218,7 +211,7 @@ class SimpleTerminalApp:
                             self.get_absolute_path(parsed_command[1], IS_DIR)):
                         zip_to_write.writestr(item, zip_to_read.read(item.filename))
         os.replace(temp_zip_path, self.vfs_path)
-        self.log_action("rmdir" + parsed_command[1])
+        self.log_action("rmdir " + parsed_command[1])
 
     def rm(self, parsed_command):
         temp_zip_path = self.vfs_path + '.tmp'
@@ -250,13 +243,14 @@ class SimpleTerminalApp:
     def cp(self, parsed_command):
         zip_temp_path = self.vfs_path + '.tmp'
         file_path = self.get_absolute_path(parsed_command[1], IS_FILE)[1:]
+        file_name = file_path.rsplit('/', 1)[1]
         target_dir = self.get_absolute_path(parsed_command[2], IS_DIR)[1:]
         with zipfile.ZipFile(self.vfs_path, 'r') as zip_to_read:
             with zipfile.ZipFile(zip_temp_path, 'w') as zip_to_write:
                 for item in zip_to_read.infolist():
                     tfn = item.filename
                     if file_path == tfn:
-                        zip_to_write.writestr(target_dir + item.filename, zip_to_read.read(item.filename))
+                        zip_to_write.writestr(target_dir + file_name, zip_to_read.read(item.filename))
                     zip_to_write.writestr(item, zip_to_read.read(item.filename))
         os.replace(zip_temp_path, self.vfs_path)
         self.log_action("cp " + parsed_command[1] + " to " + parsed_command[2])
@@ -279,11 +273,11 @@ class SimpleTerminalApp:
             return
         command = parsed_command[0]
         if command == 'clear':
-           self.clear()
+            self.clear()
         elif command == 'exit':
             self.exit()
         elif command == 'ls':
-           self.ls(parsed_command)
+            self.ls(parsed_command)
         elif command == 'oldls':
             self.oldls()
         elif command == 'mkdir':
@@ -293,11 +287,11 @@ class SimpleTerminalApp:
         elif command == 'rmdir':
             self.rmdir(parsed_command)
         elif command == 'rm':
-           self.rm(parsed_command)
+            self.rm(parsed_command)
         elif command == 'uptime':
             self.uptime()
         elif command == 'find':
-           self.find(parsed_command)
+            self.find(parsed_command)
         elif command == 'cp':
             self.cp(parsed_command)
         elif command == "cd":
@@ -306,6 +300,16 @@ class SimpleTerminalApp:
             self.pwd()
         self.output_text.insert(tk.END, self.user + ">")
 
+
+def load_config(file_path) -> dict:
+    tree = ET.parse(file_path)
+    root = tree.getroot()
+    return {
+        'user': root.find('user').text,
+        'vfs_path': root.find('vfs_path').text,
+        'log_path': root.find('log_path').text,
+        'startup_script': root.find('startup_script').text
+    }
 
 
 if __name__ == "__main__":
